@@ -55,6 +55,13 @@ def test_build_parser_supports_demo_robot_command() -> None:
     assert args.step_deg == 4
 
 
+def test_build_parser_supports_detect_hardware_command() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["detect-hardware", "--camera-max-index", "4"])
+    assert args.command == "detect-hardware"
+    assert args.camera_max_index == 4
+
+
 def test_run_demo_robot_completes_without_hardware() -> None:
     exit_code = cli.run_demo_robot(_demo_robot_args())
     assert exit_code == 0
