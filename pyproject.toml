@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kids-robotics-gesture-control"
+version = "0.1.0"
+description = "Gesture-controlled robotics CLI app for macOS ARM"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "opencv-python>=4.10.0",
+  "mediapipe>=0.10.14",
+  "numpy>=1.26.0",
+  "pyserial>=3.5",
+  "pydantic>=2.8.0",
+  "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["app", "app.camera", "app.vision", "app.robot", "app.runtime"]

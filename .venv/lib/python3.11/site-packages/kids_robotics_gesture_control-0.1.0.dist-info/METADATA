@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: kids-robotics-gesture-control
+Version: 0.1.0
+Summary: Gesture-controlled robotics CLI app for macOS ARM
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: opencv-python>=4.10.0
+Requires-Dist: mediapipe>=0.10.14
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: pyserial>=3.5
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: rich>=13.7.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+
+# Kids Robotics Gesture Control (macOS ARM)
+
+Python CLI app that maps hand gestures from a USB camera to LewanSoul miniArm motion commands.
+
+## Quickstart
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+```
+
+## Commands
+
+```bash
+python -m app.cli calibrate-camera --camera-index 0
+python -m app.cli calibrate-gestures --camera-index 0
+python -m app.cli test-robot --port /dev/tty.usb* --dry-run
+python -m app.cli run --camera-index 0 --port /dev/tty.usb* --dry-run
+```
