@@ -10,6 +10,7 @@ from app.camera.uvc_camera import UvcCamera
 from app.models import CameraConfig, RobotConfig, RuntimeConfig, SafetyConfig
 from app.robot.lewansoul_miniarm import LewanSoulConfig, LewanSoulMiniArmDriver
 from app.runtime.control_loop import ControlLoop
+from app.runtime.demo_mode import DemoCamera, DemoGestureClassifier
 from app.vision.gestures import GestureClassifier
 
 console = Console()
@@ -33,6 +34,22 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--no-preview", action="store_true")
     run.add_argument("--no-home", action="store_true")
 
+    demo = sub.add_parser("demo", help="Run simulated gesture control with no hardware")
+    _add_demo_camera_flags(demo)
+    _add_runtime_safety_flags(demo)
+    demo.add_argument("--duration-sec", type=float, default=20.0)
+    demo.add_argument("--no-preview", action="store_true")
+    demo.add_argument("--no-home", action="store_true")
+
+    demo_robot = sub.add_parser(
+        "demo-robot",
+        help="Run robot command demo in dry-run mode without connected hardware",
+    )
+    _add_robot_flags(demo_robot)
+    demo_robot.add_argument("--cycles", type=int, default=3)
+    demo_robot.add_argument("--step-deg", type=float, default=3.0)
+    demo_robot.add_argument("--pause-ms", type=int, default=250)
+
     test = sub.add_parser("test-robot", help="Send safe test commands to robot")
     _add_robot_flags(test)
     test.add_argument("--live", action="store_true")
@@ -42,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _add_camera_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument("--width", type=int, default=640)
+    parser.add_argument("--height", type=int, default=480)
+    parser.add_argument("--fps", type=int, default=30)
+
+
+def _add_demo_camera_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
@@ -185,6 +208,95 @@ def run_control(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_demo(args: argparse.Namespace) -> int:
+    if args.duration_sec <= 0:
+        raise ValueError("--duration-sec must be greater than 0")
+
+    camera_cfg = CameraConfig(camera_index=0, width=args.width, height=args.height, fps=args.fps)
+    robot_cfg = RobotConfig(
+        port="demo://virtual-arm",
+        baud_rate=115200,
+        dry_run=True,
+        home_on_startup=not args.no_home,
+    )
+    safety_cfg = SafetyConfig(
+        debounce_frames=args.debounce_frames,
+        no_hand_timeout_ms=args.no_hand_timeout_ms,
+        max_command_hz=args.max_command_hz,
+        max_joint_step_deg=args.max_joint_step_deg,
+    )
+    runtime_cfg = RuntimeConfig(
+        camera=camera_cfg,
+        robot=robot_cfg,
+        safety=safety_cfg,
+        preview=not args.no_preview,
+    )
+
+    camera = DemoCamera(
+        width=runtime_cfg.camera.width,
+        height=runtime_cfg.camera.height,
+        fps=runtime_cfg.camera.fps,
+        duration_sec=args.duration_sec,
+    )
+    classifier = DemoGestureClassifier(stable_frames_required=runtime_cfg.safety.debounce_frames)
+    driver = LewanSoulMiniArmDriver(
+        LewanSoulConfig(
+            port=runtime_cfg.robot.port,
+            baud_rate=runtime_cfg.robot.baud_rate,
+            dry_run=True,
+        ),
+        console=console,
+    )
+    loop = ControlLoop(camera, classifier, driver, runtime_cfg, console=console)
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        console.log("Demo complete")
+    return 0
+
+
+def run_demo_robot(args: argparse.Namespace) -> int:
+    if args.cycles <= 0:
+        raise ValueError("--cycles must be greater than 0")
+    if args.step_deg <= 0:
+        raise ValueError("--step-deg must be greater than 0")
+    if args.pause_ms < 0:
+        raise ValueError("--pause-ms must be >= 0")
+
+    driver = LewanSoulMiniArmDriver(
+        LewanSoulConfig(port=args.port, baud_rate=args.baud_rate, dry_run=True),
+        console=console,
+    )
+
+    pause_s = float(args.pause_ms) / 1000.0
+    driver.connect()
+    try:
+        driver.home()
+        console.log(
+            f"Robot demo started in dry-run mode (cycles={args.cycles}, step={args.step_deg:.2f}deg)"
+        )
+        for _ in range(args.cycles):
+            driver.move_axis("base", args.step_deg)
+            time.sleep(pause_s)
+            driver.move_axis("base", -args.step_deg)
+            time.sleep(pause_s)
+            driver.move_axis("shoulder", args.step_deg)
+            time.sleep(pause_s)
+            driver.move_axis("shoulder", -args.step_deg)
+            time.sleep(pause_s)
+            driver.set_gripper(open=False)
+            time.sleep(pause_s)
+            driver.set_gripper(open=True)
+            time.sleep(pause_s)
+
+        driver.stop_all()
+        console.log("Robot demo complete")
+    finally:
+        driver.disconnect()
+
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -197,6 +309,10 @@ def main() -> int:
         return run_test_robot(args)
     if args.command == "run":
         return run_control(args)
+    if args.command == "demo":
+        return run_demo(args)
+    if args.command == "demo-robot":
+        return run_demo_robot(args)
 
     raise RuntimeError(f"Unknown command: {args.command}")
 

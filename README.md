@@ -17,4 +17,6 @@ python -m app.cli calibrate-camera --camera-index 0
 python -m app.cli calibrate-gestures --camera-index 0
 python -m app.cli test-robot --port /dev/tty.usb* --dry-run
 python -m app.cli run --camera-index 0 --port /dev/tty.usb* --dry-run
+python -m app.cli demo --duration-sec 20 --no-preview
+python -m app.cli demo-robot --cycles 3 --step-deg 3 --pause-ms 250
 ```
