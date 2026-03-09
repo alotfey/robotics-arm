@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from pathlib import Path
 
 import cv2
 from rich.console import Console
@@ -11,6 +12,7 @@ from app.models import CameraConfig, RobotConfig, RuntimeConfig, SafetyConfig
 from app.robot.lewansoul_miniarm import LewanSoulConfig, LewanSoulMiniArmDriver
 from app.runtime.control_loop import ControlLoop
 from app.runtime.demo_mode import DemoCamera, DemoGestureClassifier
+from app.runtime.hardware_discovery import DEFAULT_CONFIG_PATH, detect_and_save_hardware_paths
 from app.vision.gestures import GestureClassifier
 
 console = Console()
@@ -53,6 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
     test = sub.add_parser("test-robot", help="Send safe test commands to robot")
     _add_robot_flags(test)
     test.add_argument("--live", action="store_true")
+
+    detect_hw = sub.add_parser(
+        "detect-hardware",
+        help="Detect connected arm and stereo camera, then write their paths to config",
+    )
+    detect_hw.add_argument("--config-file", type=str, default=str(DEFAULT_CONFIG_PATH))
+    detect_hw.add_argument("--camera-max-index", type=int, default=8)
 
     return parser
 
@@ -297,6 +306,22 @@ def run_demo_robot(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_detect_hardware(args: argparse.Namespace) -> int:
+    if args.camera_max_index < 0:
+        raise ValueError("--camera-max-index must be >= 0")
+
+    result = detect_and_save_hardware_paths(
+        config_path=Path(args.config_file),
+        camera_max_index=args.camera_max_index,
+    )
+    console.log(f"Hardware config updated: {args.config_file}")
+    console.log(
+        f"arm_path={result.get('arm_path')} stereo_camera_path={result.get('stereo_camera_path')} "
+        f"stereo_camera_index={result.get('stereo_camera_index')}"
+    )
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -313,6 +338,8 @@ def main() -> int:
         return run_demo(args)
     if args.command == "demo-robot":
         return run_demo_robot(args)
+    if args.command == "detect-hardware":
+        return run_detect_hardware(args)
 
     raise RuntimeError(f"Unknown command: {args.command}")
 
