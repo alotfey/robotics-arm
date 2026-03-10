@@ -75,14 +75,6 @@ def detect_stereo_camera(camera_max_index: int = 8) -> tuple[str | None, int | N
 
 
 def load_hardware_config(config_path: Path) -> dict[str, Any]:
-    """Load hardware configuration JSON if the file exists.
-
-    Args:
-        config_path: Path to the hardware config JSON file.
-
-    Returns:
-        dict[str, Any]: Parsed configuration dictionary, or empty dict when missing/blank.
-    """
     if not config_path.exists():
         return {}
     raw = config_path.read_text(encoding="utf-8")
@@ -95,15 +87,6 @@ def detect_and_save_hardware_paths(
     config_path: Path = DEFAULT_CONFIG_PATH,
     camera_max_index: int = 8,
 ) -> dict[str, Any]:
-    """Detect hardware paths and persist them to configuration JSON.
-
-    Args:
-        config_path: Destination config file path.
-        camera_max_index: Highest camera index to probe.
-
-    Returns:
-        dict[str, Any]: Final configuration dictionary that was written.
-    """
     arm_path = detect_arm_path()
     camera_path, camera_index = detect_stereo_camera(camera_max_index=camera_max_index)
 
@@ -120,15 +103,6 @@ def detect_and_save_hardware_paths(
 
 
 def _serial_score(haystack: str, device: str) -> int:
-    """Score a serial candidate path based on likely USB-arm characteristics.
-
-    Args:
-        haystack: Lowercased descriptive metadata for a port.
-        device: Port device path string.
-
-    Returns:
-        int: Heuristic relevance score (higher is better).
-    """
     score = 0
     if "usb" in haystack:
         score += 2
@@ -142,14 +116,6 @@ def _serial_score(haystack: str, device: str) -> int:
 
 
 def _camera_path_for_index(index: int) -> str:
-    """Resolve a user-friendly camera path string for an index.
-
-    Args:
-        index: OpenCV camera index.
-
-    Returns:
-        str: Concrete device path if available, otherwise ``index:{index}``.
-    """
     # Linux-style video device path, with fallback for macOS/Windows.
     candidate = Path(f"/dev/video{index}")
     if candidate.exists():
@@ -158,14 +124,6 @@ def _camera_path_for_index(index: int) -> str:
 
 
 def main() -> int:
-    """CLI entrypoint for hardware auto-discovery.
-
-    Returns:
-        int: Process-style status code.
-
-    Raises:
-        ValueError: If camera-max-index is negative.
-    """
     parser = argparse.ArgumentParser(description="Detect arm/camera and write hardware config")
     parser.add_argument("--config-file", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--camera-max-index", type=int, default=8)
