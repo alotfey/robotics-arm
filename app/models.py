@@ -53,6 +53,18 @@ class SafetyConfig(BaseModel):
     @field_validator("base_max_deg")
     @classmethod
     def validate_base_bounds(cls, value: float, info: object) -> float:
+        """Validate that base joint max bound is above min bound.
+
+        Args:
+            value: Proposed maximum base angle.
+            info: Pydantic validation context carrying sibling fields.
+
+        Returns:
+            float: Unmodified validated value.
+
+        Raises:
+            ValueError: If ``base_max_deg`` is not greater than ``base_min_deg``.
+        """
         min_value = info.data.get("base_min_deg", -90.0)  # type: ignore[attr-defined]
         if value <= min_value:
             raise ValueError("base_max_deg must be greater than base_min_deg")
@@ -61,6 +73,18 @@ class SafetyConfig(BaseModel):
     @field_validator("shoulder_max_deg")
     @classmethod
     def validate_shoulder_bounds(cls, value: float, info: object) -> float:
+        """Validate that shoulder joint max bound is above min bound.
+
+        Args:
+            value: Proposed maximum shoulder angle.
+            info: Pydantic validation context carrying sibling fields.
+
+        Returns:
+            float: Unmodified validated value.
+
+        Raises:
+            ValueError: If ``shoulder_max_deg`` is not greater than ``shoulder_min_deg``.
+        """
         min_value = info.data.get("shoulder_min_deg", -20.0)  # type: ignore[attr-defined]
         if value <= min_value:
             raise ValueError("shoulder_max_deg must be greater than shoulder_min_deg")

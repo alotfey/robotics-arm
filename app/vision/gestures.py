@@ -23,6 +23,14 @@ class GestureClassifier:
     """Deterministic hand-gesture classifier on top of MediaPipe landmarks."""
 
     def __init__(self, stable_frames_required: int = 5) -> None:
+        """Initialize MediaPipe-backed gesture classification state.
+
+        Args:
+            stable_frames_required: Consecutive frames required before emitting an event.
+
+        Raises:
+            RuntimeError: If required runtime dependencies are unavailable.
+        """
         try:
             import mediapipe as mp
         except ImportError as exc:  # pragma: no cover - environment dependent
@@ -32,6 +40,13 @@ class GestureClassifier:
 
         if cv2 is None:
             raise RuntimeError("opencv-python is required for gesture detection.")
+
+        if not hasattr(mp, "solutions"):
+            mp_version = getattr(mp, "__version__", "unknown")
+            raise RuntimeError(
+                "Installed mediapipe does not expose the legacy 'solutions' API "
+                f"(found version {mp_version}). Install mediapipe==0.10.14."
+            )
 
         self._stable_frames_required = stable_frames_required
         self._last_label: GestureName | None = None
@@ -47,9 +62,19 @@ class GestureClassifier:
         self._drawer = mp.solutions.drawing_utils
 
     def close(self) -> None:
+        """Release MediaPipe resources held by the classifier."""
         self._hands.close()
 
     def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> GestureDetection:
+        """Run hand landmark detection and classify the current gesture.
+
+        Args:
+            frame_bgr: Input frame in BGR color space.
+            timestamp_ms: Frame timestamp in milliseconds.
+
+        Returns:
+            GestureDetection: Annotated frame and optional stable gesture event.
+        """
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         result = self._hands.process(rgb)
         annotated = frame_bgr.copy()
@@ -104,56 +129,175 @@ class GestureClassifier:
 
     @staticmethod
     def _classify(points: Sequence[object]) -> tuple[GestureName | None, float]:
+        """Classify raw landmark coordinates into a gesture label.
+
+        Args:
+            points: Sequence of MediaPipe normalized landmarks.
+
+        Returns:
+            tuple[GestureName | None, float]: Gesture label and confidence.
+        """
         def y(idx: int) -> float:
+            """Return normalized y coordinate for a landmark index."""
             return float(points[idx].y)
 
         def x(idx: int) -> float:
+            """Return normalized x coordinate for a landmark index."""
             return float(points[idx].x)
 
-        wrist = np.array([x(0), y(0)])
-        middle_tip = np.array([x(12), y(12)])
-        index_tip = np.array([x(8), y(8)])
-        thumb_tip = np.array([x(4), y(4)])
+        def point(idx: int) -> np.ndarray:
+            """Return a 2D point array for a landmark index."""
+            return np.array([x(idx), y(idx)], dtype=np.float32)
 
-        finger_up = {
-            "index": y(8) < y(6),
-            "middle": y(12) < y(10),
-            "ring": y(16) < y(14),
-            "pinky": y(20) < y(18),
+        def mean_point(indices: tuple[int, ...]) -> np.ndarray:
+            """Return the centroid for a set of landmark indices."""
+            return np.mean([point(idx) for idx in indices], axis=0)
+
+        def dist(a: int, b: int) -> float:
+            """Return Euclidean distance between two landmark indices."""
+            return float(np.linalg.norm(point(a) - point(b)))
+
+        def is_finger_extended(tip: int, pip: int, mcp: int) -> bool:
+            """Estimate whether a finger is extended from three joints.
+
+            Args:
+                tip: Landmark index for the fingertip.
+                pip: Landmark index for the proximal interphalangeal joint.
+                mcp: Landmark index for the metacarpophalangeal joint.
+
+            Returns:
+                bool: ``True`` when geometry indicates finger extension.
+            """
+            tip_to_mcp = dist(tip, mcp)
+            pip_to_mcp = max(dist(pip, mcp), 1e-4)
+            # Distance-based extension is rotation invariant; the y-check helps with upright palms.
+            return (tip_to_mcp >= pip_to_mcp * 1.25) or (y(tip) < y(pip) and tip_to_mcp >= pip_to_mcp * 1.10)
+
+        def classify_axis(
+            dx: float,
+            dy: float,
+            *,
+            min_magnitude: float,
+            dominance_ratio: float,
+            base_confidence: float,
+        ) -> tuple[GestureName | None, float]:
+            """Classify a direction vector into one cardinal gesture axis.
+
+            Args:
+                dx: Horizontal vector component.
+                dy: Vertical vector component.
+                min_magnitude: Minimum vector strength required to classify.
+                dominance_ratio: Axis dominance threshold to avoid diagonal ambiguity.
+                base_confidence: Base confidence to use once vector is classifiable.
+
+            Returns:
+                tuple[GestureName | None, float]: Axis label and confidence.
+            """
+            abs_dx = abs(dx)
+            abs_dy = abs(dy)
+            strength = max(abs_dx, abs_dy)
+            if strength < min_magnitude:
+                return None, 0.0
+
+            if abs_dx >= abs_dy * dominance_ratio:
+                label = GestureName.RIGHT if dx > 0 else GestureName.LEFT
+                confidence = min(1.0, base_confidence + min(0.40, (strength - min_magnitude) * 0.30))
+                return label, confidence
+
+            if abs_dy >= abs_dx * dominance_ratio:
+                label = GestureName.DOWN if dy > 0 else GestureName.UP
+                confidence = min(1.0, base_confidence + min(0.40, (strength - min_magnitude) * 0.30))
+                return label, confidence
+
+            # Diagonal / ambiguous hand direction: ignore instead of forcing one axis.
+            return None, 0.0
+
+        wrist = point(0)
+        knuckle_center = mean_point((5, 9, 13, 17))
+        tip_center = mean_point((8, 12, 16, 20))
+        index_tip = point(8)
+
+        palm_scale = float(np.mean([dist(0, 5), dist(0, 9), dist(0, 13), dist(0, 17)]))
+        if palm_scale < 0.06:
+            # Fallback for synthetic/edge cases where knuckle points collapse.
+            palm_scale = max(0.10, dist(0, 12), dist(0, 8))
+
+        finger_extended = {
+            "index": is_finger_extended(8, 6, 5),
+            "middle": is_finger_extended(12, 10, 9),
+            "ring": is_finger_extended(16, 14, 13),
+            "pinky": is_finger_extended(20, 18, 17),
         }
 
-        open_count = sum(int(v) for v in finger_up.values())
+        open_count = sum(int(v) for v in finger_extended.values())
+        curled_count = 4 - open_count
 
-        # Grip toggle: closed fist (all fingers folded).
-        if open_count == 0:
-            return GestureName.GRIP_TOGGLE, 0.85
+        finger_tip_dist_norm = [dist(idx, 0) / palm_scale for idx in (8, 12, 16, 20)]
+        avg_tip_dist_norm = float(np.mean(finger_tip_dist_norm))
+        index_tip_dist_norm = finger_tip_dist_norm[0]
+        tip_spread_norm = float(
+            np.mean(
+                [
+                    dist(8, 12),
+                    dist(12, 16),
+                    dist(16, 20),
+                    dist(8, 16),
+                    dist(12, 20),
+                ]
+            )
+            / palm_scale
+        )
 
-        direction = middle_tip - wrist
-        dx = float(direction[0])
-        dy = float(direction[1])
+        # Grip toggle: mostly curled fingers and compact fingertip cluster near wrist.
+        is_index_pointing_candidate = finger_extended["index"] and index_tip_dist_norm > 1.35
+        if (
+            curled_count >= 3
+            and avg_tip_dist_norm < 1.55
+            and tip_spread_norm < 0.95
+            and not is_index_pointing_candidate
+        ):
+            confidence = min(
+                1.0,
+                0.70 + max(0.0, 1.55 - avg_tip_dist_norm) * 0.16 + max(0.0, 0.95 - tip_spread_norm) * 0.12,
+            )
+            return GestureName.GRIP_TOGGLE, confidence
 
-        # Vertical commands with open hand.
+        # Open hand direction from palm to fingertip centroid.
         if open_count >= 3:
-            if dy < -0.15:
-                return GestureName.UP, min(1.0, abs(dy) + 0.4)
-            if dy > 0.15:
-                return GestureName.DOWN, min(1.0, abs(dy) + 0.4)
-            if dx < -0.12:
-                return GestureName.LEFT, min(1.0, abs(dx) + 0.4)
-            if dx > 0.12:
-                return GestureName.RIGHT, min(1.0, abs(dx) + 0.4)
+            direction = (tip_center - knuckle_center) / palm_scale
+            label, confidence = classify_axis(
+                float(direction[0]),
+                float(direction[1]),
+                min_magnitude=0.65,
+                dominance_ratio=1.15,
+                base_confidence=0.55,
+            )
+            if label is not None:
+                return label, confidence
 
-        # Pointing gestures as horizontal fallback.
-        if finger_up["index"] and not finger_up["middle"]:
-            if index_tip[0] < wrist[0] - 0.08:
-                return GestureName.LEFT, 0.75
-            if index_tip[0] > wrist[0] + 0.08:
-                return GestureName.RIGHT, 0.75
+        # Index-pointing fallback for deliberate directional commands.
+        if (
+            finger_extended["index"]
+            and not finger_extended["middle"]
+            and not finger_extended["ring"]
+            and not finger_extended["pinky"]
+        ):
+            pointing = (index_tip - wrist) / palm_scale
+            dx = float(pointing[0])
+            dy = float(pointing[1])
 
-        # Thumb orientation fallback for up/down.
-        if thumb_tip[1] < wrist[1] - 0.10:
-            return GestureName.UP, 0.70
-        if thumb_tip[1] > wrist[1] + 0.10:
-            return GestureName.DOWN, 0.70
+            if abs(dx) >= 0.75 and abs(dx) >= abs(dy) * 0.75:
+                confidence = min(1.0, 0.65 + min(0.35, (abs(dx) - 0.75) * 0.50))
+                return (GestureName.RIGHT if dx > 0 else GestureName.LEFT), confidence
+
+            label, confidence = classify_axis(
+                dx,
+                dy,
+                min_magnitude=0.75,
+                dominance_ratio=1.20,
+                base_confidence=0.60,
+            )
+            if label is not None:
+                return label, confidence
 
         return None, 0.0

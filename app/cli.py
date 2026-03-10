@@ -19,6 +19,11 @@ console = Console()
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build and return the top-level CLI parser.
+
+    Returns:
+        argparse.ArgumentParser: Configured parser with all subcommands.
+    """
     parser = argparse.ArgumentParser(description="Kids robotics gesture control CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -67,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_camera_flags(parser: argparse.ArgumentParser) -> None:
+    """Attach live camera options to a subcommand parser.
+
+    Args:
+        parser: Parser to mutate with camera arguments.
+    """
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
@@ -74,18 +84,33 @@ def _add_camera_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_demo_camera_flags(parser: argparse.ArgumentParser) -> None:
+    """Attach demo camera options to a subcommand parser.
+
+    Args:
+        parser: Parser to mutate with demo camera arguments.
+    """
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
 
 
 def _add_robot_flags(parser: argparse.ArgumentParser) -> None:
+    """Attach robot connection options to a subcommand parser.
+
+    Args:
+        parser: Parser to mutate with robot arguments.
+    """
     parser.add_argument("--port", type=str, default="/dev/tty.usbmodem")
     parser.add_argument("--baud-rate", type=int, default=115200)
     parser.add_argument("--dry-run", action="store_true")
 
 
 def _add_runtime_safety_flags(parser: argparse.ArgumentParser) -> None:
+    """Attach runtime safety controls to a subcommand parser.
+
+    Args:
+        parser: Parser to mutate with safety arguments.
+    """
     parser.add_argument("--debounce-frames", type=int, default=5)
     parser.add_argument("--no-hand-timeout-ms", type=int, default=800)
     parser.add_argument("--max-command-hz", type=float, default=10.0)
@@ -93,6 +118,14 @@ def _add_runtime_safety_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def run_calibrate_camera(args: argparse.Namespace) -> int:
+    """Run camera preview calibration until the user exits.
+
+    Args:
+        args: Parsed CLI arguments for camera settings.
+
+    Returns:
+        int: Process-style status code.
+    """
     camera = UvcCamera(args.camera_index, args.width, args.height, args.fps)
     camera.start()
     started = time.time()
@@ -118,6 +151,14 @@ def run_calibrate_camera(args: argparse.Namespace) -> int:
 
 
 def run_calibrate_gestures(args: argparse.Namespace) -> int:
+    """Run gesture classification preview for calibration.
+
+    Args:
+        args: Parsed CLI arguments for camera and debounce settings.
+
+    Returns:
+        int: Process-style status code.
+    """
     camera = UvcCamera(args.camera_index, args.width, args.height, args.fps)
     classifier = GestureClassifier(stable_frames_required=args.debounce_frames)
     camera.start()
@@ -145,6 +186,17 @@ def run_calibrate_gestures(args: argparse.Namespace) -> int:
 
 
 def run_test_robot(args: argparse.Namespace) -> int:
+    """Send a short safe command sequence to the robot driver.
+
+    Args:
+        args: Parsed CLI arguments for robot connectivity and dry-run mode.
+
+    Returns:
+        int: Process-style status code.
+
+    Raises:
+        ValueError: If both live and dry-run flags are requested together.
+    """
     if args.live and args.dry_run:
         raise ValueError("Choose either --live or --dry-run, not both")
     dry_run = not args.live
@@ -172,6 +224,14 @@ def run_test_robot(args: argparse.Namespace) -> int:
 
 
 def run_control(args: argparse.Namespace) -> int:
+    """Start the live camera -> gesture -> robot control loop.
+
+    Args:
+        args: Parsed CLI arguments for camera, robot, and safety settings.
+
+    Returns:
+        int: Process-style status code.
+    """
     camera_cfg = CameraConfig(
         camera_index=args.camera_index,
         width=args.width,
@@ -218,6 +278,17 @@ def run_control(args: argparse.Namespace) -> int:
 
 
 def run_demo(args: argparse.Namespace) -> int:
+    """Run the full control loop with synthetic camera and gestures.
+
+    Args:
+        args: Parsed CLI arguments for demo mode settings.
+
+    Returns:
+        int: Process-style status code.
+
+    Raises:
+        ValueError: If the requested demo duration is not positive.
+    """
     if args.duration_sec <= 0:
         raise ValueError("--duration-sec must be greater than 0")
 
@@ -265,6 +336,17 @@ def run_demo(args: argparse.Namespace) -> int:
 
 
 def run_demo_robot(args: argparse.Namespace) -> int:
+    """Run a dry-run robot movement demo without camera input.
+
+    Args:
+        args: Parsed CLI arguments for dry-run robot demo behavior.
+
+    Returns:
+        int: Process-style status code.
+
+    Raises:
+        ValueError: If numeric options are outside valid ranges.
+    """
     if args.cycles <= 0:
         raise ValueError("--cycles must be greater than 0")
     if args.step_deg <= 0:
@@ -307,6 +389,17 @@ def run_demo_robot(args: argparse.Namespace) -> int:
 
 
 def run_detect_hardware(args: argparse.Namespace) -> int:
+    """Probe arm and camera hardware and persist discovered paths.
+
+    Args:
+        args: Parsed CLI arguments for output file and camera scan range.
+
+    Returns:
+        int: Process-style status code.
+
+    Raises:
+        ValueError: If the maximum camera index is negative.
+    """
     if args.camera_max_index < 0:
         raise ValueError("--camera-max-index must be >= 0")
 
@@ -323,6 +416,14 @@ def run_detect_hardware(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """Parse CLI arguments and dispatch to the selected command handler.
+
+    Returns:
+        int: Process-style status code.
+
+    Raises:
+        RuntimeError: If an unknown command is encountered.
+    """
     parser = build_parser()
     args = parser.parse_args()
 
