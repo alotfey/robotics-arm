@@ -23,6 +23,15 @@ class ControlLoop:
         config: RuntimeConfig,
         console: Console | None = None,
     ) -> None:
+        """Initialize the live gesture-control runtime loop.
+
+        Args:
+            camera: Camera source providing frames.
+            classifier: Gesture detector/classifier implementation.
+            driver: Robot driver receiving movement commands.
+            config: Runtime configuration and safety limits.
+            console: Optional Rich console for logs.
+        """
         self._camera = camera
         self._classifier = classifier
         self._driver = driver
@@ -36,6 +45,7 @@ class ControlLoop:
         self._shoulder_pos = 0.0
 
     def run(self) -> None:
+        """Run the control loop until interrupted or preview exit."""
         if cv2 is None:
             raise RuntimeError("opencv-python is required to run the control loop.")
         driver_connected = False
@@ -81,6 +91,11 @@ class ControlLoop:
             cv2.destroyAllWindows()
 
     def _handle_event(self, event: GestureEvent) -> None:
+        """Translate a gesture event into robot commands.
+
+        Args:
+            event: Stable gesture event emitted by the classifier.
+        """
         if not self._command_allowed():
             return
 
@@ -107,10 +122,16 @@ class ControlLoop:
         self._last_command_at = time.monotonic()
 
     def _command_allowed(self) -> bool:
+        """Return whether a new command can be sent under rate limits."""
         min_interval = 1.0 / self._config.safety.max_command_hz
         return (time.monotonic() - self._last_command_at) >= min_interval
 
     def _move_base(self, delta: float) -> None:
+        """Move the base axis while enforcing configured joint bounds.
+
+        Args:
+            delta: Requested relative movement in degrees.
+        """
         new_pos = self._clamp(
             self._base_pos + delta,
             self._config.safety.base_min_deg,
@@ -122,6 +143,11 @@ class ControlLoop:
             self._base_pos = new_pos
 
     def _move_shoulder(self, delta: float) -> None:
+        """Move the shoulder axis while enforcing configured joint bounds.
+
+        Args:
+            delta: Requested relative movement in degrees.
+        """
         new_pos = self._clamp(
             self._shoulder_pos + delta,
             self._config.safety.shoulder_min_deg,
@@ -133,14 +159,21 @@ class ControlLoop:
             self._shoulder_pos = new_pos
 
     def _maybe_timeout_stop(self, timestamp_ms: int) -> None:
+        """Stop the robot if no hand has been detected for too long.
+
+        Args:
+            timestamp_ms: Current frame timestamp in milliseconds.
+        """
         if (timestamp_ms - self._last_hand_seen_ms) >= self._config.safety.no_hand_timeout_ms:
             self._driver.stop_all()
             self._last_hand_seen_ms = timestamp_ms
 
     @staticmethod
     def _clamp(value: float, low: float, high: float) -> float:
+        """Clamp a numeric value into the inclusive range ``[low, high]``."""
         return max(low, min(high, value))
 
     @staticmethod
     def _now_ms() -> int:
+        """Return current monotonic time in milliseconds."""
         return int(time.monotonic() * 1000)
