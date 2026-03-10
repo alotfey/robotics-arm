@@ -6,6 +6,14 @@ from app import cli
 
 
 def _demo_args(**overrides: object) -> argparse.Namespace:
+    """Build default argument namespace for demo-mode tests.
+
+    Args:
+        **overrides: Values to override in the default argument map.
+
+    Returns:
+        argparse.Namespace: Parsed-style argument object.
+    """
     values: dict[str, object] = {
         "width": 320,
         "height": 240,
@@ -23,6 +31,14 @@ def _demo_args(**overrides: object) -> argparse.Namespace:
 
 
 def _demo_robot_args(**overrides: object) -> argparse.Namespace:
+    """Build default argument namespace for demo-robot tests.
+
+    Args:
+        **overrides: Values to override in the default argument map.
+
+    Returns:
+        argparse.Namespace: Parsed-style argument object.
+    """
     values: dict[str, object] = {
         "port": "/dev/tty.demo",
         "baud_rate": 115200,
@@ -36,6 +52,7 @@ def _demo_robot_args(**overrides: object) -> argparse.Namespace:
 
 
 def test_build_parser_supports_demo_command() -> None:
+    """CLI parser includes the demo command and expected options."""
     parser = cli.build_parser()
     args = parser.parse_args(["demo", "--duration-sec", "0.1", "--no-preview"])
     assert args.command == "demo"
@@ -43,11 +60,13 @@ def test_build_parser_supports_demo_command() -> None:
 
 
 def test_run_demo_completes_without_hardware() -> None:
+    """Demo mode completes in dry-run without hardware dependencies."""
     exit_code = cli.run_demo(_demo_args())
     assert exit_code == 0
 
 
 def test_build_parser_supports_demo_robot_command() -> None:
+    """CLI parser includes the demo-robot command and options."""
     parser = cli.build_parser()
     args = parser.parse_args(["demo-robot", "--cycles", "2", "--step-deg", "4"])
     assert args.command == "demo-robot"
@@ -56,6 +75,7 @@ def test_build_parser_supports_demo_robot_command() -> None:
 
 
 def test_build_parser_supports_detect_hardware_command() -> None:
+    """CLI parser includes the detect-hardware command and options."""
     parser = cli.build_parser()
     args = parser.parse_args(["detect-hardware", "--camera-max-index", "4"])
     assert args.command == "detect-hardware"
@@ -63,5 +83,6 @@ def test_build_parser_supports_detect_hardware_command() -> None:
 
 
 def test_run_demo_robot_completes_without_hardware() -> None:
+    """Demo-robot command completes in dry-run without hardware."""
     exit_code = cli.run_demo_robot(_demo_robot_args())
     assert exit_code == 0
