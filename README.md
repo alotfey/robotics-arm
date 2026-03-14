@@ -15,11 +15,15 @@ pip install -e .[dev]
 ```bash
 python -m app.cli calibrate-camera --camera-index 0
 python -m app.cli calibrate-gestures --camera-index 0
+python -m app.cli track-hand --camera-index 0 --protocol default-program --port /dev/cu.usbmodem101 --baud-rate 9600
+python -m app.cli track-hand-3d --camera-index 0 --width 2560 --height 960 --fps 30 --protocol default-program --port /dev/cu.usbmodem101 --baud-rate 9600 --default-base-channel E --default-shoulder-channel D --default-elbow-channel C --default-wrist-channel B --default-gripper-channel A
 python -m app.cli test-robot --port /dev/tty.usb* --dry-run
 python -m app.cli test-robot --live --port /dev/cu.usbmodem101 --baud-rate 9600 --protocol default-program --startup-delay-sec 2.0 --move-time-ms 700 --base-home-angle 45 --shoulder-home-angle 90 --elbow-home-angle 90 --wrist-home-angle 90 --gripper-home-angle 130 --default-base-channel B --default-shoulder-channel C --default-elbow-channel D --default-wrist-channel E --default-gripper-channel A
 python -m app.cli run --camera-index 0 --port /dev/tty.usb* --dry-run
 python -m app.cli demo --duration-sec 20 --no-preview
 python -m app.cli demo-robot --cycles 3 --step-deg 3 --pause-ms 250 --moves-per-direction 3 --dry-run
+python -m app.cli demo-dance --cycles 1 --dry-run
+python -m app.cli demo-dance --live --protocol default-program --port /dev/cu.usbmodem101 --baud-rate 9600 --cycles 1
 python -m app.cli demo-robot --live --protocol default-program --port /dev/cu.usbmodem101 --baud-rate 9600 --startup-delay-sec 2.0 --move-time-ms 700 --cycles 2 --step-deg 8 --moves-per-direction 2 --pause-ms 200 --servo-hold-ms 1200 --base-home-angle 45 --shoulder-home-angle 90 --elbow-home-angle 90 --wrist-home-angle 90 --gripper-home-angle 130 --default-base-channel B --default-shoulder-channel C --default-elbow-channel D --default-wrist-channel E --default-gripper-channel A
 python -m app.cli demo-robot --live --protocol arduino-pwm --port /dev/cu.usbmodem1101 --baud-rate 115200 --startup-delay-sec 2.0 --move-time-ms 700 --cycles 2 --step-deg 12 --moves-per-direction 2 --pause-ms 200 --servo-hold-ms 1500 --base-pwm-pin 3 --shoulder-pwm-pin 5 --elbow-pwm-pin 6 --wrist-pwm-pin 9 --gripper-pwm-pin 10 --gripper-open-angle 130 --gripper-closed-angle 40
 python -m app.cli demo-robot --cycles 2 --step-deg 8 --pause-ms 500 --moves-per-direction 5 --live --port /dev/cu.usbmodem1101 --baud-rate 115200 --protocol lx16a --startup-delay-sec 2.0 --move-time-ms 500 --base-servo-id 1 --shoulder-servo-id 2 --elbow-servo-id 3 --wrist-servo-id 4 --gripper-servo-id 5
@@ -32,6 +36,11 @@ Use `--protocol arduino-pwm` only when `firmware/arduino_pwm_servo_bridge/arduin
 Use `--protocol default-program` only when `Default_Program/MiniArm/MiniArm.ino` is flashed, with `--baud-rate 9600`.
 For Default_Program after USB reconnect/reset, hold `K1+K2` for around 3 seconds until `Start...` appears.
 If your gripper direction is reversed, add `--invert-gripper`.
+`demo-dance` is a no-camera routine and supports `--routine-file /path/to/routine.json`.
+`track-hand` continuously maps palm position to base/shoulder and pinch to gripper open/close.
+`track-hand-3d` uses stereo disparity depth (side-by-side frame) to add elbow depth control.
+For synchronized stereo modules, start with `--width 2560 --height 960`; if depth moves opposite, add `--swap-stereo-halves` or `--invert-depth`.
+Default camera flags are now tuned for stereo side-by-side streams (`--width 2560 --height 960`).
 
 `detect-hardware` writes detected values to `config/hardware_paths.json`:
 - `arm_path`: serial path for the robot arm (for example `/dev/tty.usbmodem*`)
