@@ -62,3 +62,70 @@ class UvcCamera:
         if self._capture is not None:
             self._capture.release()
             self._capture = None
+
+
+class DualUvcStereoCamera:
+    """Capture stereo frames from two camera indices and stitch side-by-side."""
+
+    def __init__(self, left_index: int, right_index: int, width: int, height: int, fps: int) -> None:
+        if width < 2 or (width % 2) != 0:
+            raise ValueError("Stereo width must be an even number when using dual camera indices")
+        self._left_index = left_index
+        self._right_index = right_index
+        self._stitched_width = width
+        self._height = height
+        self._fps = fps
+        self._single_width = width // 2
+        self._left_capture: cv2.VideoCapture | None = None
+        self._right_capture: cv2.VideoCapture | None = None
+
+    @staticmethod
+    def _set_capture_format(cap: cv2.VideoCapture, *, width: int, height: int, fps: int) -> None:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        cap.set(cv2.CAP_PROP_FPS, fps)
+
+    def start(self) -> None:
+        left = cv2.VideoCapture(self._left_index)
+        if not left.isOpened():
+            raise RuntimeError(f"Could not open left camera index {self._left_index}")
+        self._set_capture_format(left, width=self._single_width, height=self._height, fps=self._fps)
+
+        right = cv2.VideoCapture(self._right_index)
+        if not right.isOpened():
+            left.release()
+            raise RuntimeError(f"Could not open right camera index {self._right_index}")
+        self._set_capture_format(right, width=self._single_width, height=self._height, fps=self._fps)
+
+        self._left_capture = left
+        self._right_capture = right
+
+    def read(self) -> CameraFrame:
+        if self._left_capture is None or self._right_capture is None:
+            raise RuntimeError("Stereo camera not started")
+
+        left_ok, left_frame = self._left_capture.read()
+        right_ok, right_frame = self._right_capture.read()
+        if not left_ok or left_frame is None:
+            raise RuntimeError(f"Failed to read left camera frame (index {self._left_index})")
+        if not right_ok or right_frame is None:
+            raise RuntimeError(f"Failed to read right camera frame (index {self._right_index})")
+
+        if left_frame.shape[:2] != right_frame.shape[:2]:
+            right_frame = cv2.resize(
+                right_frame,
+                (left_frame.shape[1], left_frame.shape[0]),
+                interpolation=cv2.INTER_LINEAR,
+            )
+
+        frame = np.concatenate((left_frame, right_frame), axis=1)
+        timestamp_ms = int(time.monotonic() * 1000)
+        return CameraFrame(frame_bgr=frame, timestamp_ms=timestamp_ms)
+
+    def stop(self) -> None:
+        if self._left_capture is not None:
+            self._left_capture.release()
+            self._left_capture = None
+        if self._right_capture is not None:
+            self._right_capture.release()
+            self._right_capture = None

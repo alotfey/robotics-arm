@@ -9,7 +9,7 @@ from typing import Any
 import cv2
 from rich.console import Console
 
-from app.camera.uvc_camera import UvcCamera
+from app.camera.uvc_camera import DualUvcStereoCamera, UvcCamera
 from app.models import CameraConfig, RobotConfig, RuntimeConfig, SafetyConfig
 from app.robot.lewansoul_miniarm import LewanSoulConfig, LewanSoulMiniArmDriver
 from app.runtime.control_loop import ControlLoop
@@ -206,6 +206,18 @@ def _add_camera_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_stereo_camera_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument(
+        "--left-camera-index",
+        type=int,
+        default=None,
+        help="Optional: left camera index for dual-camera stereo input",
+    )
+    parser.add_argument(
+        "--right-camera-index",
+        type=int,
+        default=None,
+        help="Optional: right camera index for dual-camera stereo input",
+    )
     parser.add_argument("--width", type=int, default=2560)
     parser.add_argument("--height", type=int, default=960)
     parser.add_argument("--fps", type=int, default=30)
@@ -662,12 +674,28 @@ def run_track_hand_3d(args: argparse.Namespace) -> int:
     )
     _warn_default_program_baud(protocol=protocol, baud_rate=runtime_cfg.robot.baud_rate)
 
-    camera = UvcCamera(
-        runtime_cfg.camera.camera_index,
-        runtime_cfg.camera.width,
-        runtime_cfg.camera.height,
-        runtime_cfg.camera.fps,
-    )
+    left_camera_index = getattr(args, "left_camera_index", None)
+    right_camera_index = getattr(args, "right_camera_index", None)
+    using_dual_indexes = (left_camera_index is not None) or (right_camera_index is not None)
+    if using_dual_indexes:
+        if left_camera_index is None or right_camera_index is None:
+            raise ValueError("Provide both --left-camera-index and --right-camera-index")
+        if int(left_camera_index) == int(right_camera_index):
+            raise ValueError("--left-camera-index and --right-camera-index must be different")
+        camera = DualUvcStereoCamera(
+            int(left_camera_index),
+            int(right_camera_index),
+            runtime_cfg.camera.width,
+            runtime_cfg.camera.height,
+            runtime_cfg.camera.fps,
+        )
+    else:
+        camera = UvcCamera(
+            runtime_cfg.camera.camera_index,
+            runtime_cfg.camera.width,
+            runtime_cfg.camera.height,
+            runtime_cfg.camera.fps,
+        )
     tracker = StereoDepthHandTracker(
         baseline_mm=getattr(args, "stereo_baseline_mm", 60.0),
         hfov_deg=getattr(args, "stereo_hfov_deg", 100.0),

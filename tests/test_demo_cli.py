@@ -85,6 +85,8 @@ def _track_hand_args(**overrides: object) -> argparse.Namespace:
 def _track_hand_3d_args(**overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
         "camera_index": 0,
+        "left_camera_index": None,
+        "right_camera_index": None,
         "width": 2560,
         "height": 960,
         "fps": 30,
@@ -186,6 +188,26 @@ def test_build_parser_supports_track_hand_3d_command() -> None:
     args = parser.parse_args(["track-hand-3d", "--camera-index", "0", "--no-preview"])
     assert args.command == "track-hand-3d"
     assert args.camera_index == 0
+    assert args.left_camera_index is None
+    assert args.right_camera_index is None
+    assert args.no_preview is True
+
+
+def test_build_parser_supports_track_hand_3d_dual_indexes() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "track-hand-3d",
+            "--left-camera-index",
+            "1",
+            "--right-camera-index",
+            "2",
+            "--no-preview",
+        ]
+    )
+    assert args.command == "track-hand-3d"
+    assert args.left_camera_index == 1
+    assert args.right_camera_index == 2
     assert args.no_preview is True
 
 
@@ -433,3 +455,68 @@ def test_run_track_hand_3d_wires_tracking_loop(monkeypatch) -> None:
     assert state["tracker_args"] == (60.0, 100.0, False, 0.55, 0.55)
     assert state["driver_config"].dry_run is True
     assert state["run_called"] is True
+
+
+def test_run_track_hand_3d_with_dual_indexes_uses_dual_stereo_camera(monkeypatch) -> None:
+    state: dict[str, object] = {"uvc_constructed": False}
+
+    class FakeUvcCamera:
+        def __init__(self, index: int, width: int, height: int, fps: int) -> None:
+            state["uvc_constructed"] = True
+            state["uvc_args"] = (index, width, height, fps)
+
+    class FakeDualCamera:
+        def __init__(self, left_index: int, right_index: int, width: int, height: int, fps: int) -> None:
+            state["dual_args"] = (left_index, right_index, width, height, fps)
+
+    class FakeTracker:
+        def __init__(
+            self,
+            baseline_mm: float,
+            hfov_deg: float,
+            swap_halves: bool,
+            min_detection_confidence: float,
+            min_tracking_confidence: float,
+        ) -> None:
+            state["tracker_args"] = (
+                baseline_mm,
+                hfov_deg,
+                swap_halves,
+                min_detection_confidence,
+                min_tracking_confidence,
+            )
+
+    class FakeDriver:
+        def __init__(self, config, console=None) -> None:
+            state["driver_config"] = config
+
+    class FakeLoop:
+        def __init__(self, camera, tracker, driver, config, **kwargs) -> None:
+            state["loop_inputs"] = (camera, tracker, driver, config)
+            state["loop_kwargs"] = kwargs
+            state["run_called"] = False
+
+        def run(self) -> None:
+            state["run_called"] = True
+
+    monkeypatch.setattr(cli, "UvcCamera", FakeUvcCamera)
+    monkeypatch.setattr(cli, "DualUvcStereoCamera", FakeDualCamera)
+    monkeypatch.setattr(cli, "StereoDepthHandTracker", FakeTracker)
+    monkeypatch.setattr(cli, "LewanSoulMiniArmDriver", FakeDriver)
+    monkeypatch.setattr(cli, "StereoHandTrackingLoop", FakeLoop)
+
+    exit_code = cli.run_track_hand_3d(_track_hand_3d_args(left_camera_index=1, right_camera_index=2))
+    assert exit_code == 0
+    assert state["uvc_constructed"] is False
+    assert state["dual_args"] == (1, 2, 2560, 960, 30)
+    assert state["tracker_args"] == (60.0, 100.0, False, 0.55, 0.55)
+    assert state["driver_config"].dry_run is True
+    assert state["run_called"] is True
+
+
+def test_run_track_hand_3d_rejects_only_one_dual_index() -> None:
+    try:
+        cli.run_track_hand_3d(_track_hand_3d_args(left_camera_index=1, right_camera_index=None))
+        raise AssertionError("Expected ValueError when only one dual camera index is provided")
+    except ValueError as exc:
+        assert "Provide both --left-camera-index and --right-camera-index" in str(exc)
