@@ -9,6 +9,7 @@ try:
 except ImportError:  # pragma: no cover - optional during lightweight test runs
     cv2 = None  # type: ignore[assignment]
 
+from app.camera.uvc_camera import stereo_left_view
 from app.models import GestureEvent, GestureName
 
 
@@ -50,9 +51,10 @@ class GestureClassifier:
         self._hands.close()
 
     def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> GestureDetection:
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        frame_for_detection = stereo_left_view(frame_bgr)
+        rgb = cv2.cvtColor(frame_for_detection, cv2.COLOR_BGR2RGB)
         result = self._hands.process(rgb)
-        annotated = frame_bgr.copy()
+        annotated = frame_for_detection.copy()
 
         if not result.multi_hand_landmarks:
             self._stable_count = 0

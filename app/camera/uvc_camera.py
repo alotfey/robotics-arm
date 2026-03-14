@@ -13,6 +13,25 @@ class CameraFrame:
     timestamp_ms: int
 
 
+def is_stereo_side_by_side_frame(frame_bgr: np.ndarray) -> bool:
+    """Return True when a frame likely contains left/right side-by-side views."""
+    if frame_bgr.ndim != 3:
+        return False
+    height, width = frame_bgr.shape[:2]
+    if height <= 0 or width <= 0:
+        return False
+    # Typical synchronized stereo UVC streams are much wider than tall.
+    return (width % 2) == 0 and (float(width) / float(height)) >= 1.8
+
+
+def stereo_left_view(frame_bgr: np.ndarray) -> np.ndarray:
+    """Extract the left camera view when a side-by-side stereo frame is detected."""
+    if not is_stereo_side_by_side_frame(frame_bgr):
+        return frame_bgr
+    half = frame_bgr.shape[1] // 2
+    return frame_bgr[:, :half].copy()
+
+
 class UvcCamera:
     def __init__(self, index: int, width: int, height: int, fps: int) -> None:
         self._index = index
